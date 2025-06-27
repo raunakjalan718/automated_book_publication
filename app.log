@@ -1,0 +1,30 @@
+2025-06-28 01:38:39,167 - book_publisher - INFO - Initializing storage...
+2025-06-28 01:38:39,389 - numexpr.utils - INFO - NumExpr defaulting to 16 threads.
+2025-06-28 01:38:40,243 - chromadb.telemetry.posthog - INFO - Anonymized telemetry enabled. See https://docs.trychroma.com/telemetry for more information.
+2025-06-28 01:38:40,332 - chromadb.config - DEBUG - Starting component System
+2025-06-28 01:38:40,332 - chromadb.config - DEBUG - Starting component Posthog
+2025-06-28 01:38:40,332 - chromadb.config - DEBUG - Starting component SqliteDB
+2025-06-28 01:38:40,339 - chromadb.config - DEBUG - Starting component LocalSegmentManager
+2025-06-28 01:38:40,339 - chromadb.config - DEBUG - Starting component SegmentAPI
+2025-06-28 01:38:40,339 - chromadb.telemetry.posthog - ERROR - Failed to send telemetry event client_start: capture() takes 1 positional argument but 3 were given
+2025-06-28 01:38:40,344 - book_publisher - INFO - Importing workflow components...
+2025-06-28 01:40:49,430 - book_publisher - INFO - Initializing storage...
+2025-06-28 01:40:49,664 - numexpr.utils - INFO - NumExpr defaulting to 16 threads.
+2025-06-28 01:40:50,571 - chromadb.telemetry.posthog - INFO - Anonymized telemetry enabled. See https://docs.trychroma.com/telemetry for more information.
+2025-06-28 01:40:50,657 - chromadb.config - DEBUG - Starting component System
+2025-06-28 01:40:50,657 - chromadb.config - DEBUG - Starting component Posthog
+2025-06-28 01:40:50,657 - chromadb.config - DEBUG - Starting component SqliteDB
+2025-06-28 01:40:50,669 - chromadb.config - DEBUG - Starting component LocalSegmentManager
+2025-06-28 01:40:50,669 - chromadb.config - DEBUG - Starting component SegmentAPI
+2025-06-28 01:40:50,669 - chromadb.telemetry.posthog - ERROR - Failed to send telemetry event client_start: capture() takes 1 positional argument but 3 were given
+2025-06-28 01:40:50,669 - book_publisher - INFO - Importing workflow components...
+2025-06-28 01:53:48,790 - book_publisher - INFO - Initializing storage...
+2025-06-28 01:53:49,010 - numexpr.utils - INFO - NumExpr defaulting to 16 threads.
+2025-06-28 01:53:49,839 - chromadb.telemetry.posthog - INFO - Anonymized telemetry enabled. See https://docs.trychroma.com/telemetry for more information.
+2025-06-28 01:53:49,928 - chromadb.config - DEBUG - Starting component System
+2025-06-28 01:53:49,930 - chromadb.config - DEBUG - Starting component Posthog
+2025-06-28 01:53:49,930 - chromadb.config - DEBUG - Starting component SqliteDB
+2025-06-28 01:53:49,932 - chromadb.config - DEBUG - Starting component LocalSegmentManager
+2025-06-28 01:53:49,932 - chromadb.config - DEBUG - Starting component SegmentAPI
+2025-06-28 01:53:49,932 - chromadb.telemetry.posthog - ERROR - Failed to send telemetry event client_start: capture() takes 1 positional argument but 3 were given
+2025-06-28 01:53:49,937 - book_publisher - INFO - Importing workflow components...

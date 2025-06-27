@@ -1,15 +1,15 @@
-from typing import Dict, Any, Optional, List
+# ai_agents/text_evaluator.py
+from typing import Dict, Any, Optional
 import time
 from datetime import datetime
 import re
 import asyncio
-import string
 import random
 
 from .language_processor import ContentProcessor
 
 class TextEvaluator(ContentProcessor):
-    """Simple text evaluation without heavy dependencies."""
+    """Simple text evaluation using basic algorithms instead of ML models."""
     
     def __init__(self, evaluation_focus: str = "quality"):
         """Initialize the text evaluator."""
@@ -24,79 +24,73 @@ class TextEvaluator(ContentProcessor):
             "grammatical": 0.2
         }
     
-    def compute_text_similarity(self, text1: str, text2: str) -> float:
-        """Compute basic text similarity using word overlap."""
-        # Convert to lowercase and remove punctuation
-        def normalize(text):
-            text = text.lower()
-            text = re.sub(f'[{string.punctuation}]', '', text)
-            return text
-        
-        words1 = set(normalize(text1).split())
-        words2 = set(normalize(text2).split())
+    def jaccard_similarity(self, text1: str, text2: str) -> float:
+        """Compute basic text similarity using Jaccard similarity of words."""
+        # Convert texts to sets of words
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
         
         # Calculate Jaccard similarity
-        if not words1 or not words2:
-            return 0.0
-            
         intersection = len(words1.intersection(words2))
         union = len(words1.union(words2))
         
         return intersection / union if union > 0 else 0.0
         
-    def analyze_paragraph_structure(self, text: str) -> Dict[str, Any]:
-        """Analyze paragraph structure and flow."""
+    def analyze_text_structure(self, text: str) -> Dict[str, Any]:
+        """Analyze text structure metrics."""
         paragraphs = re.split(r'\n{2,}', text.strip())
+        sentences = re.split(r'[.!?]+', text)
+        
+        # Filter out empty strings
+        paragraphs = [p for p in paragraphs if p.strip()]
+        sentences = [s for s in sentences if s.strip()]
         
         return {
             "paragraph_count": len(paragraphs),
-            "avg_paragraph_length": sum(len(p) for p in paragraphs) / len(paragraphs) if paragraphs else 0,
-            "shortest_paragraph": min(len(p) for p in paragraphs) if paragraphs else 0,
-            "longest_paragraph": max(len(p) for p in paragraphs) if paragraphs else 0,
+            "sentence_count": len(sentences),
+            "avg_paragraph_length": sum(len(p) for p in paragraphs) / max(len(paragraphs), 1),
+            "avg_sentence_length": sum(len(s) for s in sentences) / max(len(sentences), 1),
         }
     
     async def evaluate_content(self, original: str, transformed: str) -> Dict[str, float]:
         """Evaluate transformed content against the original."""
-        # Basic similarity (lower is more distinct, but we don't want too low)
-        similarity = self.compute_text_similarity(original, transformed)
+        # Calculate similarity
+        similarity = self.jaccard_similarity(original, transformed)
         
-        # Too similar is bad (not enough transformation)
-        # Too different is also bad (lost the plot)
-        distinctiveness_score = 1.0 - abs(0.6 - similarity) * 2  # Optimal around 0.6
+        # We want similarity around 0.5-0.6 (not too similar, not too different)
+        # Transform to a score where 0.55 similarity = 1.0 score, decreasing on either side
+        distinctiveness_score = 1.0 - abs(0.55 - similarity) * 2
+        distinctiveness_score = max(0.0, min(1.0, distinctiveness_score))  # Clamp to [0,1]
         
-        # Analyze paragraph structure
-        orig_structure = self.analyze_paragraph_structure(original)
-        trans_structure = self.analyze_paragraph_structure(transformed)
+        # Analyze structure
+        orig_metrics = self.analyze_text_structure(original)
+        trans_metrics = self.analyze_text_structure(transformed)
         
-        # Coherence proxy: paragraph count ratio (should be similar)
-        paragraph_ratio = min(
-            orig_structure["paragraph_count"], 
-            trans_structure["paragraph_count"]
-        ) / max(
-            orig_structure["paragraph_count"], 
-            trans_structure["paragraph_count"]
-        ) if max(orig_structure["paragraph_count"], trans_structure["paragraph_count"]) > 0 else 0.5
+        # Coherence based on paragraph ratio
+        para_ratio = min(orig_metrics["paragraph_count"], trans_metrics["paragraph_count"]) / \
+                     max(orig_metrics["paragraph_count"], trans_metrics["paragraph_count"]) \
+                     if max(orig_metrics["paragraph_count"], trans_metrics["paragraph_count"]) > 0 else 0.5
+                     
+        # Consistency based on overall length
+        length_ratio = min(len(original), len(transformed)) / \
+                      max(len(original), len(transformed))
         
-        # Basic length consistency check
-        length_ratio = min(len(original), len(transformed)) / max(len(original), len(transformed))
+        # Simple grammatical check (based on sentence length variation)
+        orig_sent_lengths = [len(s.strip()) for s in re.split(r'[.!?]+', original) if s.strip()]
+        trans_sent_lengths = [len(s.strip()) for s in re.split(r'[.!?]+', transformed) if s.strip()]
         
-        # Grammar check proxy using sentence length variety
-        def sentence_variety(text):
-            sentences = re.split(r'[.!?]+', text)
-            if len(sentences) <= 1:
-                return 0.5
-            lengths = [len(s.strip()) for s in sentences if s.strip()]
-            if not lengths:
-                return 0.5
-            avg_len = sum(lengths) / len(lengths)
-            variance = sum((l - avg_len) ** 2 for l in lengths) / len(lengths)
-            return min(1.0, variance / 500)  # Normalize
+        orig_variance = sum((l - sum(orig_sent_lengths)/max(len(orig_sent_lengths), 1))**2 
+                           for l in orig_sent_lengths) / max(len(orig_sent_lengths), 1) if orig_sent_lengths else 0
+        trans_variance = sum((l - sum(trans_sent_lengths)/max(len(trans_sent_lengths), 1))**2 
+                           for l in trans_sent_lengths) / max(len(trans_sent_lengths), 1) if trans_sent_lengths else 0
         
-        grammatical_score = 0.5 + (sentence_variety(transformed) * 0.5)
+        # Good writing has sentence length variation, so we want similar variance
+        variance_ratio = min(orig_variance, trans_variance) / max(orig_variance, trans_variance) if max(orig_variance, trans_variance) > 0 else 0.5
+        grammatical_score = 0.7 + (variance_ratio * 0.3)  # Base score of 0.7, up to 1.0
         
-        # Combine scores based on criteria weights
+        # Combine scores
         evaluation = {
-            "coherence": paragraph_ratio,
+            "coherence": para_ratio,
             "consistency": length_ratio,
             "distinctiveness": distinctiveness_score,
             "grammatical": grammatical_score
@@ -113,6 +107,13 @@ class TextEvaluator(ContentProcessor):
                               transformation_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Evaluate content and provide feedback.
+        
+        Args:
+            input_text: Text to evaluate 
+            transformation_params: Parameters including original content
+            
+        Returns:
+            Evaluation results and feedback
         """
         if transformation_params is None:
             transformation_params = {}
@@ -132,7 +133,7 @@ class TextEvaluator(ContentProcessor):
         # Evaluate the transformation
         evaluation = await self.evaluate_content(original_content, transformed_content)
         
-        # Generate feedback based on evaluation results
+        # Generate feedback
         feedback = await self._generate_feedback(evaluation, transformation_params)
         
         return {
@@ -142,32 +143,31 @@ class TextEvaluator(ContentProcessor):
             "model": self.model_id
         }
         
-    async def _generate_feedback(self, 
-                              evaluation: Dict[str, float], 
-                              params: Dict[str, Any]) -> str:
+    async def _generate_feedback(self, evaluation: Dict[str, float], params: Dict[str, Any]) -> str:
         """Generate actionable feedback based on evaluation results."""
         chapter_title = params.get("chapter_title", "Unknown Chapter")
         
-        feedback_pieces = [f"## Review for: {chapter_title}"]
-        feedback_pieces.append(f"\nOverall Score: {evaluation['weighted_score']:.2f}/1.0\n")
+        feedback_parts = [f"## Review for: {chapter_title}", 
+                        f"\nOverall Quality Score: {evaluation['weighted_score']:.2f}/1.0\n"]
         
-        # Generate feedback for each criterion
+        # Add specific feedback based on scores
         if evaluation["distinctiveness"] < 0.7:
-            feedback_pieces.append("- **Distinctiveness Issue**: The transformed content is too similar to the original. Consider using more varied vocabulary and sentence structures.")
-            
-        if evaluation["distinctiveness"] > 0.9:  
-            feedback_pieces.append("- **Consistency Warning**: The transformed content may be too different from the original, potentially losing key plot elements.")
+            feedback_parts.append("- **Content Similarity Issue**: The transformed version is too similar to the original. Try using more varied vocabulary and restructuring sentences.")
+        
+        if evaluation["distinctiveness"] > 0.9:
+            feedback_parts.append("- **Excessive Deviation Warning**: The content differs too much from the original, which may lose important story elements.")
             
         if evaluation["coherence"] < 0.7:
-            feedback_pieces.append("- **Coherence Concern**: The paragraph structure differs significantly from the original. Consider maintaining similar paragraph breaks to preserve reading flow.")
+            feedback_parts.append("- **Structure Inconsistency**: The paragraph organization differs significantly from the original, potentially disrupting reading flow.")
             
         if evaluation["consistency"] < 0.8:
-            feedback_pieces.append("- **Length Inconsistency**: The transformed content is significantly longer or shorter than the original. Aim for similar length to maintain pacing.")
+            feedback_parts.append("- **Length Discrepancy**: The transformed content's length varies significantly from the original. Consider adjusting to maintain similar pacing.")
             
-        # Always add improvement suggestions
-        feedback_pieces.append("\n### Improvement Suggestions:")
-        feedback_pieces.append("1. Ensure all character names and key plot points are preserved")
-        feedback_pieces.append("2. Check for consistent narrative voice throughout the chapter")
-        feedback_pieces.append("3. Verify that setting descriptions maintain the same atmosphere as the original")
+        # Always include improvement suggestions
+        feedback_parts.append("\n### Improvement Recommendations:")
+        feedback_parts.append("1. Verify all character names and plot points are preserved accurately")
+        feedback_parts.append("2. Review narrative perspective for consistency throughout")
+        feedback_parts.append("3. Check that important scene descriptions retain their atmospheric qualities")
+        feedback_parts.append("4. Ensure dialogue captures each character's unique voice")
         
-        return "\n".join(feedback_pieces)
+        return "\n".join(feedback_parts)

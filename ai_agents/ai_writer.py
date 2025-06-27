@@ -181,4 +181,3 @@ class AIWriter:
             temperature=temperature,
             refine_output=refine_output
         )
-

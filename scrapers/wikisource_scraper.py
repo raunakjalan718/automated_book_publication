@@ -1,96 +1,121 @@
-import asyncio
-from playwright.async_api import async_playwright
+from playwright.sync_api import sync_playwright
 import os
-from datetime import datetime
-import config
+import time
+from pathlib import Path
+import re
+from typing import Dict, List, Optional
+from config import SCREENSHOTS_DIR, WIKISOURCE_BASE_URL, INITIAL_CHAPTER_URL
 
 class WikiSourceScraper:
-    """Class for scraping content from Wikisource pages"""
+    """Scraper for wiki source content."""
     
     def __init__(self):
-        self.screenshots_folder = config.SCREENSHOTS_DIR
+        """Initialize the scraper with directory for screenshots."""
+        self.screenshots_dir = SCREENSHOTS_DIR
+        Path(self.screenshots_dir).mkdir(exist_ok=True, parents=True)
+        
+    def extract_chapter_content(self, page) -> str:
+        """Extract the main text content from the page."""
+        content = page.evaluate('''() => {
+            const mainContent = document.querySelector('.mw-parser-output');
+            if (!mainContent) return '';
+            
+            // Get paragraphs but exclude notes or references
+            const paragraphs = Array.from(mainContent.querySelectorAll('p'))
+                .filter(p => !p.closest('.references') && !p.closest('.footnotes'));
+            
+            return paragraphs.map(p => p.textContent.trim()).join('\\n\\n');
+        }''')
+        
+        return content
     
-    async def fetch_chapter_content(self, url=None):
-        """
-        Scrapes chapter content and takes a screenshot
+    def find_next_chapter_link(self, page) -> Optional[str]:
+        """Locate the link to the next chapter if available."""
+        next_link = page.evaluate('''() => {
+            // Look for navigation patterns
+            const navLinks = document.querySelectorAll('a');
+            for (const link of navLinks) {
+                const text = link.textContent.toLowerCase();
+                if (text.includes('next chapter') || 
+                    text.includes('chapter') && text.includes('next') ||
+                    text === 'next' ||
+                    text.match(/chapter\\s+\\d+/i)) {
+                    return link.href;
+                }
+            }
+            return null;
+        }''')
         
-        Args:
-            url: The chapter URL to scrape (defaults to config URL if None)
-            
-        Returns:
-            dict: Chapter data including title, content, and screenshot path
-        """
-        if not url:
-            url = config.INITIAL_CHAPTER_URL
-            
-        # Use a unique timestamp for the screenshot filename
-        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        chapter_identifier = url.split('/')[-1]
-        screenshot_filename = f"{chapter_identifier}_{current_time}.png"
-        screenshot_path = os.path.join(self.screenshots_folder, screenshot_filename)
+        return next_link
+    
+    def get_chapter_title(self, page) -> str:
+        """Extract the chapter title from the page."""
+        title = page.evaluate('''() => {
+            const headings = document.querySelectorAll('h1, h2, h3');
+            for (const heading of headings) {
+                if (heading.textContent.trim().length > 0) {
+                    return heading.textContent.trim();
+                }
+            }
+            return document.title;
+        }''')
         
-        print(f"Starting to scrape content from {url}")
-        
-        async with async_playwright() as playwright:
-            # Launch browser
-            browser = await playwright.chromium.launch(headless=True)
-            context = await browser.new_context()
-            page = await context.new_page()
+        return title
+    
+    def scrape_chapter(self, url: str) -> Dict:
+        """Scrape a single chapter and return its content and metadata."""
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
             
-            # Navigate to URL
-            await page.goto(url)
-            await page.wait_for_load_state("networkidle")
+            print(f"Scraping page: {url}")
+            page.goto(url)
+            time.sleep(2)  # Allow page to fully load
             
-            # Extract chapter title
-            title_element = await page.query_selector(".firstHeading")
-            chapter_title = await title_element.inner_text() if title_element else "Unknown Chapter"
+            # Take screenshot
+            screenshot_path = os.path.join(
+                self.screenshots_dir, 
+                f"chapter_{int(time.time())}.png"
+            )
+            page.screenshot(path=screenshot_path)
             
-            # Extract chapter content
-            content_element = await page.query_selector("#mw-content-text")
-            raw_content = await content_element.inner_text() if content_element else ""
+            # Extract chapter information
+            title = self.get_chapter_title(page)
+            content = self.extract_chapter_content(page)
+            next_chapter_url = self.find_next_chapter_link(page)
             
-            # Capture screenshot
-            await page.screenshot(path=screenshot_path, full_page=True)
+            # Extract chapter number from URL or title
+            chapter_match = re.search(r'Chapter_(\d+)', url)
+            chapter_num = int(chapter_match.group(1)) if chapter_match else None
             
-            # Clean up
-            await browser.close()
+            browser.close()
             
-            # Return structured data
             return {
-                "title": chapter_title,
-                "content": raw_content,
+                "url": url,
+                "title": title,
+                "content": content,
                 "screenshot_path": screenshot_path,
-                "source_url": url,
-                "timestamp": current_time
+                "next_chapter_url": next_chapter_url,
+                "chapter_number": chapter_num
             }
     
-    async def get_chapter_links(self, book_num=1):
-        """
-        Retrieves all chapter URLs for a specific book
+    def scrape_book(self, start_url: str = None) -> List[Dict]:
+        """Scrape all chapters of a book starting from the given URL."""
+        if start_url is None:
+            start_url = INITIAL_CHAPTER_URL
+            
+        chapters = []
+        current_url = start_url
         
-        Args:
-            book_num: Book number to scrape
+        while current_url:
+            chapter_data = self.scrape_chapter(current_url)
+            chapters.append(chapter_data)
             
-        Returns:
-            list: URLs of chapters in the book
-        """
-        book_url = f"{config.WIKISOURCE_BASE_URL}/Book_{book_num}"
-        chapter_urls = []
+            # Move to next chapter if available
+            current_url = chapter_data.get("next_chapter_url")
+            
+            # Add delay between requests
+            if current_url:
+                time.sleep(1.5)  # Be respectful to the server
         
-        async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch()
-            page = await browser.new_page()
-            
-            await page.goto(book_url)
-            
-            # Find all links containing "Chapter" in the href
-            links = await page.query_selector_all('a[href*="/Chapter_"]')
-            for link in links:
-                href = await link.get_attribute("href")
-                if href:
-                    full_url = f"https://en.wikisource.org{href}"
-                    chapter_urls.append(full_url)
-            
-            await browser.close()
-        
-        return chapter_urls
+        return chapters

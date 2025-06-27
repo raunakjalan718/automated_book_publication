@@ -7,7 +7,7 @@ import os
 
 from scrapers.content_harvester import ContentHarvester
 from ai_agents.gemini_transformer import GeminiTransformer
-from ai_agents.huggingface_evaluator import HuggingFaceEvaluator
+from ai_agents.text_evaluator import TextEvaluator
 from storage.version_manager import VersionManager
 
 class PublicationProcess:
@@ -22,7 +22,7 @@ class PublicationProcess:
         """
         self.harvester = ContentHarvester()
         self.transformer = GeminiTransformer("creative")
-        self.evaluator = HuggingFaceEvaluator("quality")
+        self.evaluator = TextEvaluator("quality")
         self.version_manager = VersionManager(db_path)
         
         # Generate a unique process ID
